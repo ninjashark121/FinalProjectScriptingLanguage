@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import re
+from datetime import datetime
+from typing import List, Dict, Optional
+
+class EmailParser:
+    def __init__(self, input_file: str):
+        """
+        Initialize the EmailParser with an input CSV file.
+        
+        :param input_file: Path to the input CSV file
+        """
+        self.input_file = input_file
+        self.emails: List[Dict] = self._read_emails()
+
+    def _read_emails(self) -> List[Dict]:
+        """
+        Read emails from the CSV file.
+        
+        :return: List of email dictionaries
+        """
+        try:
+            with open(self.input_file, 'r', newline='', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                return list(reader)
+        except FileNotFoundError:
+            print(f"Error: File {self.input_file} not found.")
+            exit(1)
+        except csv.Error as e:
+            print(f"Error reading CSV file: {e}")
+            exit(1)
+
+    def interactive_mode(self):
+        print("\n Interactive Email Parser")
+        
+        # Sender filter
+        print("SENDER FILTER:")
+        print("  - Examples: 'john', '@example.com', 'support'")
+        sender_filter = input("  Enter sender filter (press Enter to skip): ").strip()
+        
+        # Date filters
+        print("\nDATE RANGE FILTER:")
+        print("  - Use YYYY-MM-DD format")
+        print("  - Leave blank to skip that filter")
+        print("  - Example start date: '2024-01-01'")
+        after_date = input("  Enter start date (after this date): ").strip()
+        
+        print("\n  - Example end date: '2024-12-31'")
+        before_date = input("  Enter end date (before this date): ").strip()
+        
+        # Generate report
+        print("\nSUMMARY REPORT:")
+        print("  shows filtered emails.")
+        generate_report = input("  Generate file? (yes/No): ").strip().lower() in ['y', 'yes']
+        
+        # Export filtered emails
+        print("\nEXPORT OPTIONS:")
+        print("  - Save filtered emails to a new CSV file")
+        print("  - Example: 'filtered_emails.csv'")
+        export_file = input("  Enter output filename (press Enter to skip): ").strip()
+
+        # Filter emails
+        filtered_emails = self.filter_emails(
+            sender=sender_filter if sender_filter else None, 
+            before_date=before_date if before_date else None, 
+            after_date=after_date if after_date else None
+        )
+
+        # Display number of matched emails
+        print(f"\n>>> Found {len(filtered_emails)} matching emails <<<")
+
+        # Generate report if requested
+        if generate_report:
+            self.generate_report(filtered_emails)
+
+        # Export filtered emails if output specified
+        if export_file:
+            self.export_filtered_emails(filtered_emails, export_file)
+
+        print("\nEmail parsing complete")
+
+    def filter_emails(self, 
+                      sender: Optional[str] = None, 
+                      before_date: Optional[str] = None, 
+                      after_date: Optional[str] = None) -> List[Dict]:
+
+        filtered_emails = self.emails
+
+        # Sender filter (case-insensitive partial match)
+        if sender:
+            filtered_emails = [
+                email for email in filtered_emails 
+                if re.search(sender, email['sender'], re.IGNORECASE)
+            ]
+
+        # Date filters
+        try:
+            if before_date:
+                before = datetime.strptime(before_date, '%Y-%m-%d')
+                filtered_emails = [
+                    email for email in filtered_emails
+                    if datetime.strptime(email['date'], '%Y-%m-%d') < before
+                ]
+
+            if after_date:
+                after = datetime.strptime(after_date, '%Y-%m-%d')
+                filtered_emails = [
+                    email for email in filtered_emails
+                    if datetime.strptime(email['date'], '%Y-%m-%d') > after
+                ]
+        except ValueError:
+            print("Error: Invalid date format. Use YYYY-MM-DD")
+            exit(1)
+
+        return filtered_emails
+
+    def generate_report(self, filtered_emails: List[Dict]) -> None:
+
+        print("\n--- Email Summary Report ---")
+        print(f"Total Emails Analyzed: {len(self.emails)}")
+        print(f"Filtered Emails: {len(filtered_emails)}")
+        
+        if filtered_emails:
+            # Sender distribution
+            sender_counts = {}
+            for email in filtered_emails:
+                sender = email['sender']
+                sender_counts[sender] = sender_counts.get(sender, 0) + 1
+            
+            print("\nSender Distribution:")
+            for sender, count in sorted(sender_counts.items(), key=lambda x: x[1], reverse=True):
+                print(f"  {sender}: {count} emails")
+
+    def export_filtered_emails(self, filtered_emails: List[Dict], output_file: str) -> None:
+
+        try:
+            with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+                # Use the same fieldnames as the input file
+                fieldnames = self.emails[0].keys()
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                writer.writeheader()
+                writer.writerows(filtered_emails)
+            print(f"\nFiltered emails exported to {output_file}")
+        except IOError as e:
+            print(f"Error writing to file: {e}")
+
+def main():
+    parser = argparse.ArgumentParser(description='Email Parser and Filter')
+    
+    parser.add_argument('-f', '--file', 
+                        default='emails.csv',  # Default to emails.csv
+                        help='Input CSV file with email data (default: emails.csv)')
+    parser.add_argument('-i', '--interactive', 
+                        action='store_true', 
+                        help='Run in interactive mode')
+
+    args = parser.parse_args()
+
+    # Initialize EmailParser
+    email_parser = EmailParser(args.file)
+
+    # Run in interactive mode if specified
+    if args.interactive:
+        email_parser.interactive_mode()
+    else:
+        print("Use -i or --interactive flag to enter interactive mode.")
+
+if __name__ == '__main__':
+    main()
